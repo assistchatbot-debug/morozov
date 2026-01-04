@@ -13,6 +13,7 @@ from bitrix24_client import Bitrix24Client
 from onec_client import OneCClient
 from ai_reports import AIReportsService
 from sync_service import SyncService
+from telegram_bot import TelegramBot
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -56,6 +57,12 @@ async def lifespan(app: FastAPI):
     sync_service = SyncService()
     await sync_service.start_scheduler()
     logger.info("Sync scheduler started")
+    
+    # Отправка уведомления о запуске
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        telegram = TelegramBot(settings.telegram_bot_token, settings.telegram_chat_id)
+        await telegram.send_message("🚀 *Middleware запущен*\n\nСистема интеграции 1С-Битрикс24 готова к работе")
+        await telegram.close()
     
     yield
     
@@ -115,6 +122,10 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
     """Обработка сделки и отправка в 1С"""
     bitrix24 = Bitrix24Client()
     onec = OneCClient()
+    telegram = None
+    
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        telegram = TelegramBot(settings.telegram_bot_token, settings.telegram_chat_id)
     
     try:
         logger.info(f"Processing deal {deal_id} for 1C")
@@ -151,6 +162,8 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
         
         if not mapped_products:
             logger.error(f"No mapped products for deal {deal_id}")
+            if telegram:
+                await telegram.notify_error(f"Нет маппинга товаров для сделки {deal_id}")
             return
         
         order_data = {
@@ -175,6 +188,14 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
                 f"Номер накладной: {order_number}"
             )
             
+            # Telegram уведомление
+            if telegram:
+                await telegram.notify_order_created(
+                    deal_id, 
+                    order_number, 
+                    customer_name.strip() or "Клиент Kaspi"
+                )
+            
             log_entry = SyncLog(
                 sync_type="order_to_1c",
                 direction="bitrix24_to_1c",
@@ -187,13 +208,21 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
             await session.commit()
             
             logger.info(f"Order {order_number} created in 1C for deal {deal_id}")
+        else:
+            error_msg = result.get("error", "Unknown error")
+            if telegram:
+                await telegram.notify_error(f"Ошибка создания накладной для сделки {deal_id}: {error_msg}")
     
     except Exception as e:
         logger.error(f"Error processing deal {deal_id}: {e}")
+        if telegram:
+            await telegram.notify_error(f"Ошибка обработки сделки {deal_id}: {str(e)}")
     
     finally:
         await bitrix24.close()
         await onec.close()
+        if telegram:
+            await telegram.close()
 
 
 @app.post("/api/ai-report")

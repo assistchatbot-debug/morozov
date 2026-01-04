@@ -22,9 +22,13 @@ class Settings(BaseSettings):
     openrouter_api_key: str
     openrouter_model: str = "openai/gpt-oss-120b"
     
+    # Telegram
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    
     # Сервер
     server_host: str = "0.0.0.0"
-    server_port: int = 8000
+    server_port: int = 8008
     log_level: str = "INFO"
     
     # Синхронизация
