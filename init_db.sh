@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+echo "🗄️ Инициализация таблиц в базе данных..."
+
+cd /root/morozov
+
+# Запуск Python скрипта для создания таблиц
+docker compose exec middleware python -c "
+import asyncio
+from database import init_db
+
+async def main():
+    print('Создание таблиц...')
+    await init_db()
+    print('✅ Таблицы успешно созданы!')
+
+asyncio.run(main())
+"
+
+echo "🎉 Инициализация БД завершена!"
