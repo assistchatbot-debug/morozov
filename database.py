@@ -6,8 +6,16 @@ from datetime import datetime
 from config import settings
 
 
+# Конвертация URL для asyncpg
+db_url = settings.database_url
+if db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Конвертация sslmode в ssl для asyncpg
+db_url = db_url.replace("sslmode=require", "ssl=require")
+
 # Создание движка БД
-engine = create_async_engine(settings.database_url, echo=True)
+engine = create_async_engine(db_url, echo=True)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

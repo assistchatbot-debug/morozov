@@ -5,8 +5,7 @@ echo "🗄️ Инициализация таблиц в базе данных..
 
 cd /root/morozov
 
-# Запуск Python скрипта для создания таблиц
-docker compose exec middleware python -c "
+docker-compose exec middleware python -c "
 import asyncio
 from database import init_db
 
