@@ -1,5 +1,5 @@
 """Основной FastAPI сервер"""
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 from loguru import logger
@@ -25,13 +25,6 @@ logger.add("logs/app.log", rotation="1 day", retention="30 days", level=settings
 
 
 # Модели данных
-class DealWebhook(BaseModel):
-    """Webhook от Bitrix24 при изменении сделки"""
-    event: str
-    data: dict
-    auth: Optional[dict] = None
-
-
 class AIReportRequest(BaseModel):
     """Запрос на генерацию ИИ-отчёта"""
     query: str
@@ -91,21 +84,29 @@ async def root():
 
 @app.post("/webhook/bitrix24/deal")
 async def bitrix24_deal_webhook(
-    webhook: DealWebhook,
+    request: Request,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session)
 ):
     """Webhook для обработки событий сделок из Bitrix24"""
-    logger.info(f"Received Bitrix24 webhook: {webhook.event}")
-    
     try:
-        if webhook.event not in ["ONCRMDEALADD", "ONCRMDEALUPDATE"]:
-            return {"status": "ignored", "message": "Not a deal event"}
+        # Bitrix24 отправляет данные как form data
+        form_data = await request.form()
+        data = dict(form_data)
         
-        deal_id = webhook.data.get("FIELDS", {}).get("ID")
+        logger.info(f"Received webhook data: {data}")
+        
+        event = data.get("event")
+        if not event or event not in ["ONCRMDEALADD", "ONCRMDEALUPDATE"]:
+            return {"status": "ignored", "message": f"Not a deal event: {event}"}
+        
+        # Получаем ID сделки из data[FIELDS][ID]
+        deal_id = data.get("data[FIELDS][ID]")
         if not deal_id:
+            logger.error(f"Deal ID not found in data: {data}")
             raise HTTPException(status_code=400, detail="Deal ID not found")
         
+        logger.info(f"Processing deal {deal_id} from event {event}")
         background_tasks.add_task(process_deal_to_1c, deal_id, session)
         
         return {
@@ -114,7 +115,7 @@ async def bitrix24_deal_webhook(
         }
     
     except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
+        logger.error(f"Error processing webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -131,6 +132,8 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
         logger.info(f"Processing deal {deal_id} for 1C")
         
         deal = await bitrix24.get_deal(deal_id)
+        logger.info(f"Deal data: {deal}")
+        
         is_kaspi = deal.get("UF_KASPI_PAYMENT") == "1" or "kaspi" in deal.get("TITLE", "").lower()
         
         if not is_kaspi:
@@ -214,7 +217,7 @@ async def process_deal_to_1c(deal_id: str, session: AsyncSession):
                 await telegram.notify_error(f"Ошибка создания накладной для сделки {deal_id}: {error_msg}")
     
     except Exception as e:
-        logger.error(f"Error processing deal {deal_id}: {e}")
+        logger.error(f"Error processing deal {deal_id}: {e}", exc_info=True)
         if telegram:
             await telegram.notify_error(f"Ошибка обработки сделки {deal_id}: {str(e)}")
     
