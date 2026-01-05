@@ -322,4 +322,4 @@ curl -u "odata.user:password" \
 
 Proprietary - H&B Technology
 
-**© Rashid Kabzhanov**
+**© Created by Rashid Kabzhanov**
