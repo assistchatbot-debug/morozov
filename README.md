@@ -321,4 +321,5 @@ curl -u "odata.user:password" \
 ## 📄 Лицензия
 
 Proprietary - H&B Technology
+
 **© Rashid Kabzhanov**
