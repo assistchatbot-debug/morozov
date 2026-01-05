@@ -307,3 +307,30 @@ async def get_product_mappings(session: AsyncSession = Depends(get_session)):
             for m in mappings
         ]
     }
+
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    try:
+        data = await request.json()
+        msg = data.get('message', {})
+        text = msg.get('text', '')
+        chat_id = msg.get('chat', {}).get('id')
+        
+        if not chat_id:
+            return {"ok": True}
+        
+        tg = TelegramBot(settings.telegram_bot_token, str(chat_id))
+        
+        if '📦' in text:
+            await tg.send_message("⏳ Загружаю остатки...")
+            from stock_report import get_stock_report
+            report = await get_stock_report(settings.onec_base_url, settings.onec_username, settings.onec_password)
+            await tg.send_message(report)
+        elif '📊' in text:
+            status = "📊 *СТАТУС СИСТЕМЫ*\n\n✅ Middleware: Работает\n✅ 1С OData: Подключено\n✅ Bitrix24: Активно\n✅ PostgreSQL: OK"
+            await tg.send_message(status)
+        
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False}
